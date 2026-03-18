@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=pipesplit
+Comment=Connect audio routing for streaming
+Exec=/bin/bash -c "$HOME/.local/bin/pipesplit toggle"
+Icon=audio-card
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;
+Keywords=stream;audio;obs;pipewire;

@@ -1,0 +1,13 @@
+[Unit]
+Description=pipesplit audio auto-router
+After=pipewire.service wireplumber.service
+Requires=pipewire.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/pipesplit-router
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# pipesplit-router — auto-route application audio to virtual sinks
+#
+# Usage:
+#   pipesplit-router              # daemon mode (poll loop)
+#   pipesplit-router --once       # single pass then exit
+
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/pipesplit/routes.conf"
+POLL_INTERVAL=2
+
+# ── helpers ──────────────────────────────────────────────────────────
+
+log()  { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
+
+declare -a PATTERNS=() HP_SINKS=() STREAM_SINKS=()
+
+load_config() {
+    PATTERNS=()
+    HP_SINKS=()
+    STREAM_SINKS=()
+
+    if [[ ! -f "$CONF" ]]; then
+        log "ERROR: Config not found: $CONF"
+        exit 1
+    fi
+
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+
+        if [[ "$line" =~ ^[[:space:]]*([^=]+)[[:space:]]*=[[:space:]]*([^,]+)[[:space:]]*,[[:space:]]*(.+)[[:space:]]*$ ]]; then
+            local pattern="${BASH_REMATCH[1]}"
+            local hp="${BASH_REMATCH[2]}"
+            local stream="${BASH_REMATCH[3]}"
+            pattern="${pattern%"${pattern##*[![:space:]]}"}"
+            hp="${hp%"${hp##*[![:space:]]}"}"
+            stream="${stream%"${stream##*[![:space:]]}"}"
+            PATTERNS+=("$pattern")
+            HP_SINKS+=("$hp")
+            STREAM_SINKS+=("$stream")
+        fi
+    done < "$CONF"
+
+    log "Loaded ${#PATTERNS[@]} route(s) from $CONF"
+}
+
+get_output_nodes() {
+    pw-link -ol 2>/dev/null \
+        | grep -oP '^[^:]+' \
+        | sort -u || true
+}
+
+get_hw_outputs() {
+    pw-cli ls Node 2>/dev/null \
+        | grep -oP 'node\.name = "\K[^"]+' \
+        | grep "^alsa_output" \
+        | sort -u || true
+}
+
+quiet_link() {
+    pw-link "$1" "$2" 2>/dev/null || true
+}
+
+disconnect_app_from_hardware() {
+    local app="$1"
+    local hw_nodes
+    hw_nodes=$(get_hw_outputs)
+
+    local disconnected=0
+    for hw in $hw_nodes; do
+        if pw-link -d "${app}:output_FL" "${hw}:playback_FL" 2>/dev/null; then
+            disconnected=1
+        fi
+        pw-link -d "${app}:output_FR" "${hw}:playback_FR" 2>/dev/null || true
+    done
+
+    if [[ $disconnected -eq 1 ]]; then
+        log "Disconnected: $app from hardware output"
+    fi
+}
+
+route_app() {
+    local app="$1" hp="$2" stream="$3"
+
+    quiet_link "${app}:output_FL" "${hp}:playback_FL"
+    quiet_link "${app}:output_FR" "${hp}:playback_FR"
+    quiet_link "${app}:output_FL" "${stream}:playback_FL"
+    quiet_link "${app}:output_FR" "${stream}:playback_FR"
+
+    disconnect_app_from_hardware "$app"
+}
+
+do_routing_pass() {
+    local nodes
+    nodes=$(get_output_nodes)
+
+    for i in "${!PATTERNS[@]}"; do
+        local pattern="${PATTERNS[$i]}"
+        local hp="${HP_SINKS[$i]}"
+        local stream="${STREAM_SINKS[$i]}"
+
+        local matches
+        matches=$(echo "$nodes" | grep -F "$pattern" || true)
+        [[ -z "$matches" ]] && continue
+
+        while read -r app; do
+            route_app "$app" "$hp" "$stream"
+        done <<< "$matches"
+    done
+}
+
+# ── main ─────────────────────────────────────────────────────────────
+
+load_config
+
+if [[ "${1:-}" == "--once" ]]; then
+    log "Single routing pass..."
+    do_routing_pass
+    log "Done."
+    exit 0
+fi
+
+log "Watching for audio streams (poll every ${POLL_INTERVAL}s)..."
+log "Config: $CONF"
+
+while true; do
+    do_routing_pass
+    sleep "$POLL_INTERVAL"
+done
