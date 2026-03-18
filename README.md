@@ -208,3 +208,7 @@ pipesplit.service        Systemd user unit for the router
 pipesplit.desktop        Desktop launcher
 install.sh               Installer
 ```
+
+---
+
+**Disclaimer:** This README.md was partially generated with AI assistance.
