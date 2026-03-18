@@ -5,26 +5,61 @@ set -euo pipefail
 #
 # Usage:
 #   pipesplit                   # connect to last-used output device
-#   pipesplit toggle            # switch between output devices
-#   pipesplit soundblaster      # force Sound Blaster X4
-#   pipesplit elgato            # force Elgato Wave XLR
+#   pipesplit toggle            # cycle to next output device
+#   pipesplit <key>             # force a specific device (key from outputs.conf)
 #   pipesplit status            # show current state
 #   pipesplit stop              # stop auto-router
 #
 # Keybind for Hyprland:
 #   bind = SUPER, F8, exec, ~/.local/bin/pipesplit toggle
 
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/pipesplit/outputs.conf"
 STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/pipesplit-output"
-HP_SINKS=("hp-games" "hp-music")
 
-declare -A DEVICES=(
-    [soundblaster]="Sound_Blaster_X4"
-    [elgato]="Wave_XLR"
-)
-declare -A LABELS=(
-    [soundblaster]="Sound Blaster X4"
-    [elgato]="Elgato Wave XLR"
-)
+declare -A DEVICES=()
+declare -A LABELS=()
+declare -a DEVICE_KEYS=()
+declare -a HP_SINKS=()
+declare -a VIRTUAL_SINKS=()
+
+# ── config ────────────────────────────────────────────────────────────
+
+load_config() {
+    if [[ ! -f "$CONF" ]]; then
+        err "Config not found: $CONF"
+        err "Expected: $CONF"
+        exit 1
+    fi
+
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+
+        if [[ "$line" =~ ^[[:space:]]*hp_sinks[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+            read -ra HP_SINKS <<< "${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]*virtual_sinks[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+            read -ra VIRTUAL_SINKS <<< "${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*([^,]+)[[:space:]]*,[[:space:]]*(.+)$ ]]; then
+            local key="${BASH_REMATCH[1]}"
+            local pattern="${BASH_REMATCH[2]}"
+            local label="${BASH_REMATCH[3]}"
+            pattern="${pattern%"${pattern##*[![:space:]]}"}"
+            label="${label%"${label##*[![:space:]]}"}"
+            DEVICES[$key]="$pattern"
+            LABELS[$key]="$label"
+            DEVICE_KEYS+=("$key")
+        fi
+    done < "$CONF"
+
+    if [[ ${#DEVICE_KEYS[@]} -eq 0 ]]; then
+        err "No output devices defined in $CONF"
+        exit 1
+    fi
+    if [[ ${#HP_SINKS[@]} -eq 0 ]]; then
+        err "No hp_sinks defined in $CONF"
+        exit 1
+    fi
+}
 
 # ── helpers ──────────────────────────────────────────────────────────
 
@@ -44,23 +79,28 @@ resolve_output_node() {
         | grep -m1 "$1" || true
 }
 
-# Get the PipeWire object ID for a node name (needed for wpctl)
-resolve_node_id() {
-    pw-cli ls Node 2>/dev/null \
-        | grep -B1 "node.name = \"$1\"" \
-        | grep -oP 'id \K\d+' \
-        | head -1 || true
-}
-
 get_current() {
-    cat "$STATE_FILE" 2>/dev/null || echo "soundblaster"
+    local saved
+    saved=$(cat "$STATE_FILE" 2>/dev/null || true)
+    if [[ -n "$saved" && -v DEVICES[$saved] ]]; then
+        echo "$saved"
+    else
+        echo "${DEVICE_KEYS[0]}"
+    fi
 }
 
-get_other() {
-    case "$(get_current)" in
-        soundblaster) echo "elgato" ;;
-        *)            echo "soundblaster" ;;
-    esac
+get_next() {
+    local current
+    current=$(get_current)
+    local i
+    for i in "${!DEVICE_KEYS[@]}"; do
+        if [[ "${DEVICE_KEYS[$i]}" == "$current" ]]; then
+            local next=$(( (i + 1) % ${#DEVICE_KEYS[@]} ))
+            echo "${DEVICE_KEYS[$next]}"
+            return
+        fi
+    done
+    echo "${DEVICE_KEYS[0]}"
 }
 
 disconnect_device() {
@@ -128,11 +168,9 @@ switch_to() {
         | grep "$node" | awk '{print $1}' || true)
     if [[ -n "$sink_id" ]]; then
         pactl list sink-inputs short 2>/dev/null | while IFS=$'\t' read -r input_idx sink_idx _ _ _; do
-            # Get the sink name for this input's current sink
             local current_sink
             current_sink=$(pactl list sinks short 2>/dev/null \
                 | awk -v id="$sink_idx" '$1 == id {print $2}' || true)
-            # Only move if currently on a hardware output (not a virtual sink)
             if [[ "$current_sink" == alsa_output* && "$sink_idx" != "$sink_id" ]]; then
                 pactl move-sink-input "$input_idx" "$sink_id" 2>/dev/null && \
                     log "  Moved stream $input_idx → $label" || true
@@ -160,12 +198,12 @@ switch_to() {
 
 # ── commands ─────────────────────────────────────────────────────────
 
-case "${1:-connect}" in
+load_config
+
+cmd="${1:-connect}"
+case "$cmd" in
     toggle)
-        switch_to "$(get_other)"
-        ;;
-    soundblaster|elgato)
-        switch_to "$1"
+        switch_to "$(get_next)"
         ;;
     stop)
         systemctl --user stop pipesplit.service 2>/dev/null && ok "Auto-router stopped" || warn "Auto-router was not running"
@@ -175,7 +213,7 @@ case "${1:-connect}" in
         echo "Output device: ${LABELS[$current]}"
         echo ""
         echo "=== Virtual sinks ==="
-        for sink in hp-games hp-music stream-games stream-music; do
+        for sink in "${VIRTUAL_SINKS[@]}"; do
             if pw-cli ls Node 2>/dev/null | grep -q "node.name = \"$sink\""; then
                 ok "$sink"
             else
@@ -200,7 +238,12 @@ case "${1:-connect}" in
         switch_to "$(get_current)"
         ;;
     *)
-        echo "Usage: pipesplit [toggle|soundblaster|elgato|status|stop|connect]"
-        exit 1
+        if [[ -v DEVICES[$cmd] ]]; then
+            switch_to "$cmd"
+        else
+            keys=$(IFS='|'; echo "${DEVICE_KEYS[*]}")
+            echo "Usage: pipesplit [toggle|${keys}|status|stop|connect]"
+            exit 1
+        fi
         ;;
 esac

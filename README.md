@@ -4,16 +4,7 @@ Split application audio into independent headphone and stream channels on Linux.
 
 ![audio-controll](/./audio-controll.png)
 
-**pipesplit** creates virtual PipeWire sinks, automatically routes applications to them, and lets you toggle between output devices with a keybind.
-
-## TODO
-
-```
-[] Add simple config file for Output Devices
-[] Cycle through devices instead of toggle
-```
-
-
+**pipesplit** creates virtual PipeWire sinks, automatically routes applications to them, and lets you cycle between output devices with a keybind.
 
 ```
                     ┌─────────────┐
@@ -33,7 +24,7 @@ Split application audio into independent headphone and stream channels on Linux.
 
 - **Auto-routing** — a background daemon watches for apps and splits their audio to both sinks automatically
 - **Per-app config** — simple text file maps app names to sink pairs
-- **Output toggle** — switch between headphone devices with one command or keybind
+- **Output cycling** — cycle through any number of output devices with one command or keybind
 - **Survives reboots** — virtual sinks are created by PipeWire config, not scripts
 - **No GUI needed** — works headless, but plays nice with qpwgraph for visual debugging
 
@@ -62,7 +53,40 @@ pipesplit connect                          # link headphone sinks to output devi
 
 ## Quick start
 
-### 1. Configure your apps
+### 1. Configure your output devices
+
+Edit `~/.config/pipesplit/outputs.conf`.
+
+First, find your hardware output node names:
+
+```bash
+pw-cli ls Node | grep -oP 'node\.name = "\Kalsa_output[^"]+'
+```
+
+Example output:
+```
+alsa_output.usb-Creative_Technology_Sound_Blaster_X4-00.analog-stereo
+alsa_output.usb-Elgato_Wave_XLR-00.analog-stereo
+```
+
+Then edit the config — the pattern is a substring matched against those node names:
+
+```conf
+# key = node_pattern, Human Label
+soundblaster = Sound_Blaster_X4, Sound Blaster X4
+elgato        = Wave_XLR,        Elgato Wave XLR
+
+hp_sinks      = hp-games hp-music
+virtual_sinks = hp-games hp-music stream-games stream-music
+```
+
+- **key** — short name used as a CLI argument (`pipesplit soundblaster`) and in toggle order
+- **node_pattern** — unique substring of the device's PipeWire node name
+- **Human Label** — shown in notifications and status output
+- **hp_sinks** — virtual sinks wired to the selected output device
+- **virtual_sinks** — sinks verified by `pipesplit status`
+
+### 2. Configure your apps
 
 Edit `~/.config/pipesplit/routes.conf`:
 
@@ -76,10 +100,6 @@ The left side is a substring match against PipeWire node names. Find running app
 ```bash
 pw-link -ol | grep -oP '^[^:]+' | sort -u
 ```
-
-### 2. Configure your output devices
-
-Edit the `DEVICES` array in `~/.local/bin/pipesplit` if your devices differ from the defaults (Sound Blaster X4 and Elgato Wave XLR).
 
 ### 3. Set app outputs
 
@@ -103,9 +123,8 @@ Each gets an independent volume fader in OBS's mixer.
 
 ```bash
 pipesplit                   # connect to last-used output device
-pipesplit toggle            # switch between output devices
-pipesplit soundblaster      # force Sound Blaster X4
-pipesplit elgato            # force Elgato Wave XLR
+pipesplit toggle            # cycle to next output device
+pipesplit soundblaster      # force a specific device (key from outputs.conf)
 pipesplit status            # show sinks, router state, and links
 pipesplit stop              # stop the auto-router
 ```
@@ -118,16 +137,15 @@ bind = SUPER, F8, exec, ~/.local/bin/pipesplit toggle
 
 ## Adding sinks
 
-Add a new sink pair to `sinks.conf` and restart PipeWire:
+Add a new sink pair to `~/.config/pipewire/pipewire.conf.d/pipesplit.conf` and restart PipeWire:
 
 ```conf
-# In ~/.config/pipewire/pipewire.conf.d/pipesplit.conf
 {
     factory = adapter
     args = {
         factory.name   = support.null-audio-sink
         node.name       = hp-voice
-        node.description = "Headphones-voice"
+        node.description = "Headphones-Voice"
         media.class     = Audio/Sink
         audio.position  = [ FL FR ]
         monitor.channel-volumes = true
@@ -136,16 +154,17 @@ Add a new sink pair to `sinks.conf` and restart PipeWire:
 }
 ```
 
-Then add the route and update the `HP_SINKS` array in the main script:
+Then update both config files:
 
 ```conf
 # ~/.config/pipesplit/routes.conf
 discord = hp-voice, stream-voice
 ```
 
-```bash
-# In ~/.local/bin/pipesplit
-HP_SINKS=("hp-games" "hp-music" "hp-voice")
+```conf
+# ~/.config/pipesplit/outputs.conf
+hp_sinks      = hp-games hp-music hp-voice
+virtual_sinks = hp-games hp-music hp-voice stream-games stream-music stream-voice
 ```
 
 ## How it works
@@ -181,6 +200,7 @@ journalctl --user -u pipesplit -f
 
 ```
 pipesplit.conf           PipeWire config — creates virtual sinks on boot
+outputs.conf             Output device definitions and headphone sink list
 routes.conf              App-to-sink mapping
 pipesplit                Main script — output switching and management
 pipesplit-router         Auto-routing daemon

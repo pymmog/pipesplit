@@ -15,7 +15,7 @@ mkdir -p ~/.config/pipewire/pipewire.conf.d
 cp "$SCRIPT_DIR/pipesplit.conf" ~/.config/pipewire/pipewire.conf.d/pipesplit.conf
 ok "~/.config/pipewire/pipewire.conf.d/pipesplit.conf"
 
-# 2. Route config
+# 2. Route and output configs
 log "Route config..."
 mkdir -p ~/.config/pipesplit
 if [[ -f ~/.config/pipesplit/routes.conf ]]; then
@@ -23,6 +23,12 @@ if [[ -f ~/.config/pipesplit/routes.conf ]]; then
 else
     cp "$SCRIPT_DIR/routes.conf" ~/.config/pipesplit/routes.conf
     ok "~/.config/pipesplit/routes.conf"
+fi
+if [[ -f ~/.config/pipesplit/outputs.conf ]]; then
+    ok "~/.config/pipesplit/outputs.conf (exists, not overwriting)"
+else
+    cp "$SCRIPT_DIR/outputs.conf" ~/.config/pipesplit/outputs.conf
+    ok "~/.config/pipesplit/outputs.conf"
 fi
 
 # 3. Scripts
@@ -56,6 +62,7 @@ echo "  1. systemctl --user restart pipewire"
 echo "  2. systemctl --user enable --now pipesplit"
 echo "  3. pipesplit connect"
 echo ""
-echo "  Edit app routes:  ~/.config/pipesplit/routes.conf"
+echo "  Edit output devices: ~/.config/pipesplit/outputs.conf"
+echo "  Edit app routes:     ~/.config/pipesplit/routes.conf"
 echo "  Toggle output:    pipesplit toggle"
 echo "  Check status:     pipesplit status"
