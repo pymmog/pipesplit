@@ -2,7 +2,7 @@
 
 Split application audio into independent headphone and stream channels on Linux. Built for streamers who want per-app volume control in OBS without touching a patch bay.
 
-![audio-controll](/home/nero/Documents/Coding/pipesplit/audio-controll.png)
+![audio-controll](/./audio-controll.png)
 
 **pipesplit** creates virtual PipeWire sinks, automatically routes applications to them, and lets you toggle between output devices with a keybind.
 
