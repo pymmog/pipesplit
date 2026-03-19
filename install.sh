@@ -33,7 +33,7 @@ multiselect() {
         printf "\033[K  \033[2m↑↓ move   Space toggle   Enter confirm\033[0m\n"
         for (( i=0; i<_ms_count; i++ )); do
             local mark="[ ]"
-            [[ ${_ms_selected[$i]} -eq 1 ]] && mark="\033[1;32m[x]\033[0m"
+            [[ ${_ms_selected[$i]} -eq 1 ]] && mark=$'\033[1;32m[x]\033[0m'
             if [[ $i -eq $_ms_cursor ]]; then
                 printf "\033[K  \033[1;36m%-3s  %s\033[0m\n" "$mark" "${_ms_items[$i]}"
             else
@@ -224,7 +224,7 @@ trap 'rm -f "$GEN_PW" "$GEN_OUT" "$GEN_RT"; tput cnorm 2>/dev/null || true' EXIT
     for cat in "${SEL_CATS[@]}"; do
         desc=$(title_case "$cat")
         printf '\n'
-        sink_block "hp-${cat}" "Headphones-${desc}"
+        sink_block "${cat}" "${desc}"
         if [[ "$WANT_STREAM" == true ]]; then
             sink_block "stream-${cat}" "Stream-${desc}"
         fi
@@ -245,11 +245,11 @@ trap 'rm -f "$GEN_PW" "$GEN_OUT" "$GEN_RT"; tput cnorm 2>/dev/null || true' EXIT
     done
     printf '\n# Virtual sinks connected to the selected output device\n'
     printf 'hp_sinks ='
-    for cat in "${SEL_CATS[@]}"; do printf ' hp-%s' "$cat"; done
+    for cat in "${SEL_CATS[@]}"; do printf ' %s' "$cat"; done
     printf '\n\n# Virtual sinks to verify in: pipesplit status\n'
     printf 'virtual_sinks ='
     for cat in "${SEL_CATS[@]}"; do
-        printf ' hp-%s' "$cat"
+        printf ' %s' "$cat"
         [[ "$WANT_STREAM" == true ]] && printf ' stream-%s' "$cat"
     done
     printf '\n'
@@ -260,30 +260,30 @@ trap 'rm -f "$GEN_PW" "$GEN_OUT" "$GEN_RT"; tput cnorm 2>/dev/null || true' EXIT
     printf '# ~/.config/pipesplit/routes.conf\n'
     printf '#\n'
     printf '# Map application node names to sink pairs.\n'
-    printf '# Format: app_pattern = hp_sink, stream_sink\n'
+    printf '# Format: app_pattern = hp_sink[, stream_sink]\n'
     printf '#\n'
     printf '# app_pattern is matched as a substring against PipeWire node names.\n'
-    printf '# Find running app names with: pw-link -ol | grep -oP '"'"'^[^:]+'"'"' | sort -u\n\n'
+    printf '# Find running app names with: pw-link -ol | grep -oP '"'"'^[^:]+'"'"' | sort -u\n'
+    printf '# stream_sink is optional — omit it to route only to headphones.\n\n'
     if [[ "$WANT_ROUTES" == true ]]; then
         for cat in "${SEL_CATS[@]}"; do
             [[ -v DEFAULT_APPS[$cat] ]] || continue
             app="${DEFAULT_APPS[$cat]}"
             hp="hp-${cat}"
             if [[ "$WANT_STREAM" == true ]]; then
-                stream="stream-${cat}"
+                printf '%-16s= %s, stream-%s\n' "$app" "$cat" "$cat"
             else
-                stream="hp-${cat}"
+                printf '%-16s= %s\n' "$app" "$cat"
             fi
-            printf '%-16s= %s, %s\n' "$app" "$hp" "$stream"
         done
         printf '\n'
     fi
     printf '# Add more apps as needed:\n'
     for cat in "${SEL_CATS[@]}"; do
         if [[ "$WANT_STREAM" == true ]]; then
-            printf '# myapp           = hp-%s, stream-%s\n' "$cat" "$cat"
+            printf '# myapp           = %s, stream-%s\n' "$cat" "$cat"
         else
-            printf '# myapp           = hp-%s, hp-%s\n' "$cat" "$cat"
+            printf '# myapp           = %s\n' "$cat"
         fi
     done
 } > "$GEN_RT"

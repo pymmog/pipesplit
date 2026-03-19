@@ -229,10 +229,12 @@ case "$cmd" in
         fi
         echo ""
         echo "=== App → sink links ==="
-        pw-link -l 2>/dev/null | grep -E "(hp-|stream-)(games|music):playback" || echo "  (none)"
+        vsinks_pat=$(IFS='|'; echo "${VIRTUAL_SINKS[*]}")
+        pw-link -l 2>/dev/null | grep -E "(${vsinks_pat}):playback" || echo "  (none)"
         echo ""
         echo "=== Headphone → output links ==="
-        pw-link -l 2>/dev/null | grep -E "hp-(games|music):monitor" || echo "  (none)"
+        hpsinks_pat=$(IFS='|'; echo "${HP_SINKS[*]}")
+        pw-link -l 2>/dev/null | grep -E "(${hpsinks_pat}):monitor" || echo "  (none)"
         ;;
     connect)
         switch_to "$(get_current)"
