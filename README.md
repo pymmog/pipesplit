@@ -80,8 +80,8 @@ Then edit the config — the pattern is a substring matched against those node n
 soundblaster = Sound_Blaster_X4, Sound Blaster X4
 elgato        = Wave_XLR,        Elgato Wave XLR
 
-hp_sinks      = hp-games hp-music
-virtual_sinks = hp-games hp-music stream-games stream-music
+hp_sinks      = games music voice
+virtual_sinks = games music stream-games stream-music
 ```
 
 - **key** — short name used as a CLI argument (`pipesplit soundblaster`) and in toggle order
@@ -95,8 +95,8 @@ virtual_sinks = hp-games hp-music stream-games stream-music
 Edit `~/.config/pipesplit/routes.conf`:
 
 ```conf
-spotify         = hp-music, stream-music
-.exe            = hp-games, stream-games
+spotify         = music, stream-music
+.exe            = games, stream-games
 ```
 
 The left side is a substring match against PipeWire node names. Find running app names with:
@@ -148,8 +148,8 @@ Add a new sink pair to `~/.config/pipewire/pipewire.conf.d/pipesplit.conf` and r
     factory = adapter
     args = {
         factory.name   = support.null-audio-sink
-        node.name       = hp-voice
-        node.description = "Headphones-Voice"
+        node.name       = voice
+        node.description = "Voice"
         media.class     = Audio/Sink
         audio.position  = [ FL FR ]
         monitor.channel-volumes = true
@@ -162,13 +162,13 @@ Then update both config files:
 
 ```conf
 # ~/.config/pipesplit/routes.conf
-discord = hp-voice, stream-voice
+discord = voice, stream-voice
 ```
 
 ```conf
 # ~/.config/pipesplit/outputs.conf
-hp_sinks      = hp-games hp-music hp-voice
-virtual_sinks = hp-games hp-music hp-voice stream-games stream-music stream-voice
+hp_sinks      = games music voice
+virtual_sinks = games music voice stream-games stream-music stream-voice
 ```
 
 ## How it works
