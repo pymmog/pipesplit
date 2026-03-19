@@ -104,7 +104,7 @@ do_routing_pass() {
         local stream="${STREAM_SINKS[$i]}"
 
         local matches
-        matches=$(echo "$nodes" | grep -F "$pattern" || true)
+        matches=$(echo "$nodes" | grep -iF "$pattern" || true)
         [[ -z "$matches" ]] && continue
 
         while read -r app; do
