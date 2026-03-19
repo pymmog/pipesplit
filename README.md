@@ -47,6 +47,24 @@ chmod +x install.sh
 ./install.sh
 ```
 
+The installer is interactive and walks you through:
+
+1. **Detecting output devices** — lists all `alsa_output` PipeWire nodes found on your system
+2. **Selecting outputs** — multi-select which devices to configure (e.g. headphones, speakers)
+3. **Naming each output** — assigns a short key (e.g. `soundblaster`) and a human label; the installer suggests a name based on the node name
+4. **Selecting sink categories** — choose from `music`, `games`, `voice`, `browser`
+5. **Stream channels** — optionally adds a `stream-<category>` sink per category for OBS
+6. **Pre-configured app routes** — optionally adds default routes (`spotify→music`, `.exe→games`, `chromium→browser`, `discord→voice`) to `routes.conf`
+
+The installer generates and installs:
+
+- `~/.config/pipewire/pipewire.conf.d/pipesplit.conf` — virtual sink definitions
+- `~/.config/pipesplit/outputs.conf` — output device config
+- `~/.config/pipesplit/routes.conf` — app routing rules (only if it doesn't already exist)
+- `~/.local/bin/pipesplit` and `~/.local/bin/pipesplit-router`
+- `~/.config/systemd/user/pipesplit.service`
+- `~/.local/share/applications/pipesplit.desktop`
+
 Then:
 
 ```bash
@@ -55,13 +73,30 @@ systemctl --user enable --now pipesplit    # start auto-router on login
 pipesplit connect                          # link headphone sinks to output device
 ```
 
+## Uninstall
+
+```bash
+chmod +x uninstall.sh
+./uninstall.sh
+```
+
+This stops the service, removes all installed files, and runs `systemctl --user daemon-reload`. Your `~/.config/pipesplit/` directory (including `routes.conf`) is kept — remove it manually if you want a clean slate:
+
+```bash
+rm -rf ~/.config/pipesplit
+```
+
+Then restart PipeWire to remove the virtual sinks:
+
+```bash
+systemctl --user restart pipewire
+```
+
 ## Quick start
 
 ### 1. Configure your output devices
 
-Edit `~/.config/pipesplit/outputs.conf`.
-
-First, find your hardware output node names:
+The installer generates `~/.config/pipesplit/outputs.conf` for you. To edit it manually or add devices later:
 
 ```bash
 pw-cli ls Node | grep -oP 'node\.name = "\Kalsa_output[^"]+'
@@ -73,7 +108,7 @@ alsa_output.usb-Creative_Technology_Sound_Blaster_X4-00.analog-stereo
 alsa_output.usb-Elgato_Wave_XLR-00.analog-stereo
 ```
 
-Then edit the config — the pattern is a substring matched against those node names:
+The config format — the pattern is a substring matched against those node names:
 
 ```conf
 # key = node_pattern, Human Label
@@ -210,7 +245,8 @@ pipesplit                Main script — output switching and management
 pipesplit-router         Auto-routing daemon
 pipesplit.service        Systemd user unit for the router
 pipesplit.desktop        Desktop launcher
-install.sh               Installer
+install.sh               Interactive installer
+uninstall.sh             Uninstaller
 ```
 
 ---
