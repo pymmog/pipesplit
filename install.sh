@@ -297,12 +297,8 @@ cp "$GEN_PW" ~/.config/pipewire/pipewire.conf.d/pipesplit.conf
 ok "~/.config/pipewire/pipewire.conf.d/pipesplit.conf"
 
 mkdir -p ~/.config/pipesplit
-if [[ -f ~/.config/pipesplit/outputs.conf ]]; then
-    info "~/.config/pipesplit/outputs.conf (exists, not overwriting)"
-else
-    cp "$GEN_OUT" ~/.config/pipesplit/outputs.conf
-    ok "~/.config/pipesplit/outputs.conf"
-fi
+cp "$GEN_OUT" ~/.config/pipesplit/outputs.conf
+ok "~/.config/pipesplit/outputs.conf"
 if [[ -f ~/.config/pipesplit/routes.conf ]]; then
     info "~/.config/pipesplit/routes.conf (exists, not overwriting)"
 else
