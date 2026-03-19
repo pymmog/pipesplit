@@ -184,7 +184,9 @@ switch_to() {
     notify "Switched to $label"
 
     # Start/restart the auto-router
-    if systemctl --user is-enabled pipesplit.service &>/dev/null; then
+    if [[ -n "${PIPESPLIT_NO_RESTART:-}" ]]; then
+        : # skip restart when called from service ExecStartPre
+    elif systemctl --user is-enabled pipesplit.service &>/dev/null; then
         log "Restarting auto-router..."
         systemctl --user restart pipesplit.service
     else

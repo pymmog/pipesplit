@@ -5,6 +5,7 @@ Requires=pipewire.service
 
 [Service]
 Type=simple
+ExecStartPre=/bin/bash -c 'PIPESPLIT_NO_RESTART=1 %h/.local/bin/pipesplit connect'
 ExecStart=%h/.local/bin/pipesplit-router
 Restart=on-failure
 RestartSec=3
