@@ -184,7 +184,9 @@ switch_to() {
     notify "Switched to $label"
 
     # Start/restart the auto-router
-    if systemctl --user is-enabled pipesplit.service &>/dev/null; then
+    if [[ -n "${PIPESPLIT_NO_RESTART:-}" ]]; then
+        : # skip restart when called from service ExecStartPre
+    elif systemctl --user is-enabled pipesplit.service &>/dev/null; then
         log "Restarting auto-router..."
         systemctl --user restart pipesplit.service
     else
@@ -229,10 +231,12 @@ case "$cmd" in
         fi
         echo ""
         echo "=== App → sink links ==="
-        pw-link -l 2>/dev/null | grep -E "(hp-|stream-)(games|music):playback" || echo "  (none)"
+        vsinks_pat=$(IFS='|'; echo "${VIRTUAL_SINKS[*]}")
+        pw-link -l 2>/dev/null | grep -E "(${vsinks_pat}):playback" || echo "  (none)"
         echo ""
         echo "=== Headphone → output links ==="
-        pw-link -l 2>/dev/null | grep -E "hp-(games|music):monitor" || echo "  (none)"
+        hpsinks_pat=$(IFS='|'; echo "${HP_SINKS[*]}")
+        pw-link -l 2>/dev/null | grep -E "(${hpsinks_pat}):monitor" || echo "  (none)"
         ;;
     connect)
         switch_to "$(get_current)"
