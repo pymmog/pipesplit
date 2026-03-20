@@ -5,7 +5,7 @@ Requires=pipewire.service
 
 [Service]
 Type=simple
-ExecStartPre=/bin/bash -c 'PIPESPLIT_NO_RESTART=1 %h/.local/bin/pipesplit connect'
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 20); do PIPESPLIT_NO_RESTART=1 %h/.local/bin/pipesplit connect && break || sleep 2; done'
 ExecStart=%h/.local/bin/pipesplit-router
 Restart=on-failure
 RestartSec=3
