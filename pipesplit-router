@@ -46,10 +46,56 @@ load_config() {
     log "Loaded ${#PATTERNS[@]} route(s) from $CONF"
 }
 
-get_output_nodes() {
-    pw-link -ol 2>/dev/null \
-        | grep -oP '^[^:]+' \
-        | sort -u || true
+# Returns "fl_port_id fr_port_id node_name" per Stream/Output/Audio node.
+# Uses unique port IDs so multiple instances of the same app (e.g. two Chrome
+# windows sharing the same node.name) are each routed independently.
+get_audio_output_nodes() {
+    local node_map port_map
+
+    # Get audio stream node IDs and names
+    node_map=$(pw-cli ls Node 2>/dev/null | awk '
+        /^[[:space:]]*id [0-9]+,/ {
+            if (id != "" && name != "" && is_stream) print id, name
+            s = $0; gsub(/^[^0-9]*/, "", s); gsub(/[^0-9].*$/, "", s); id = s
+            name = ""; is_stream = 0
+        }
+        /node\.name = "/          { split($0, a, "\""); name = a[2] }
+        /media\.class = "Stream\/Output\/Audio"/ { is_stream = 1 }
+        END { if (id != "" && name != "" && is_stream) print id, name }
+    ' || true)
+
+    [[ -z "$node_map" ]] && return
+
+    # Get output port IDs indexed by node ID and port name
+    port_map=$(pw-cli ls Port 2>/dev/null | awk '
+        /^[[:space:]]*id [0-9]+,/ {
+            if (nid != "" && pid != "" && pname != "" && dir == "out")
+                print nid, pid, pname
+            s = $0; gsub(/^[^0-9]*/, "", s); gsub(/[^0-9].*$/, "", s); pid = s
+            nid = ""; pname = ""; dir = ""
+        }
+        /node\.id = "/       { split($0, a, "\""); nid = a[2] }
+        /port\.name = "/     { split($0, a, "\""); pname = a[2] }
+        /port\.direction = "out"/ { dir = "out" }
+        END {
+            if (nid != "" && pid != "" && pname != "" && dir == "out")
+                print nid, pid, pname
+        }
+    ' || true)
+
+    # Join: for each audio node find its FL and FR port IDs
+    while IFS=' ' read -r node_id node_name; do
+        [[ -z "$node_id" ]] && continue
+        local fl_id="" fr_id=""
+        while IFS=' ' read -r p_nid p_pid p_pname; do
+            [[ "$p_nid" == "$node_id" ]] || continue
+            [[ "$p_pname" == "output_FL" ]] && fl_id="$p_pid"
+            [[ "$p_pname" == "output_FR" ]] && fr_id="$p_pid"
+        done <<< "$port_map"
+        if [[ -n "$fl_id" && -n "$fr_id" ]]; then
+            echo "$fl_id $fr_id $node_name"
+        fi
+    done <<< "$node_map"
 }
 
 get_hw_outputs() {
@@ -63,53 +109,56 @@ quiet_link() {
     pw-link "$1" "$2" 2>/dev/null || true
 }
 
+# fl_id / fr_id are PipeWire port IDs (integers); pw-link accepts these directly.
 disconnect_app_from_hardware() {
-    local app="$1"
-    local hw_nodes
-    hw_nodes=$(get_hw_outputs)
+    local fl_id="$1" fr_id="$2" name="${3:-}" hw_nodes="${4:-}"
+
+    if [[ -z "$hw_nodes" ]]; then
+        hw_nodes=$(get_hw_outputs)
+    fi
 
     local disconnected=0
     for hw in $hw_nodes; do
-        if pw-link -d "${app}:output_FL" "${hw}:playback_FL" 2>/dev/null; then
+        if pw-link -d "$fl_id" "${hw}:playback_FL" 2>/dev/null; then
             disconnected=1
         fi
-        pw-link -d "${app}:output_FR" "${hw}:playback_FR" 2>/dev/null || true
+        pw-link -d "$fr_id" "${hw}:playback_FR" 2>/dev/null || true
     done
 
     if [[ $disconnected -eq 1 ]]; then
-        log "Disconnected: $app from hardware output"
+        log "Disconnected: ${name:-unknown} from hardware output"
     fi
 }
 
 route_app() {
-    local app="$1" hp="$2" stream="$3"
+    local fl_id="$1" fr_id="$2" hp="$3" stream="$4" name="${5:-}" hw_nodes="${6:-}"
 
-    quiet_link "${app}:output_FL" "${hp}:playback_FL"
-    quiet_link "${app}:output_FR" "${hp}:playback_FR"
+    quiet_link "$fl_id" "${hp}:playback_FL"
+    quiet_link "$fr_id" "${hp}:playback_FR"
     if [[ -n "$stream" ]]; then
-        quiet_link "${app}:output_FL" "${stream}:playback_FL"
-        quiet_link "${app}:output_FR" "${stream}:playback_FR"
+        quiet_link "$fl_id" "${stream}:playback_FL"
+        quiet_link "$fr_id" "${stream}:playback_FR"
     fi
 
-    disconnect_app_from_hardware "$app"
+    disconnect_app_from_hardware "$fl_id" "$fr_id" "$name" "$hw_nodes"
 }
 
 do_routing_pass() {
-    local nodes
-    nodes=$(get_output_nodes)
+    local nodes hw_nodes
+    nodes=$(get_audio_output_nodes)
+    hw_nodes=$(get_hw_outputs)
 
     for i in "${!PATTERNS[@]}"; do
         local pattern="${PATTERNS[$i]}"
         local hp="${HP_SINKS[$i]}"
         local stream="${STREAM_SINKS[$i]}"
 
-        local matches
-        matches=$(echo "$nodes" | grep -iF "$pattern" || true)
-        [[ -z "$matches" ]] && continue
-
-        while read -r app; do
-            route_app "$app" "$hp" "$stream"
-        done <<< "$matches"
+        while IFS=' ' read -r fl_id fr_id node_name; do
+            [[ -z "$fl_id" ]] && continue
+            if echo "$node_name" | grep -qiF "$pattern"; then
+                route_app "$fl_id" "$fr_id" "$hp" "$stream" "$node_name" "$hw_nodes"
+            fi
+        done <<< "$nodes"
     done
 }
 
