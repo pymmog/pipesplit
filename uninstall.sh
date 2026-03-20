@@ -18,13 +18,14 @@ rm -f ~/.local/bin/pipesplit ~/.local/bin/pipesplit-router
 rm -f ~/.config/systemd/user/pipesplit.service
 rm -f ~/.config/pipewire/pipewire.conf.d/pipesplit.conf
 rm -f ~/.local/share/applications/pipesplit.desktop
+rm -f ~/.config/pipesplit/outputs.conf ~/.config/pipesplit/routes.conf
+rmdir --ignore-fail-on-non-empty ~/.config/pipesplit 2>/dev/null || true
+rm -f "${XDG_STATE_HOME:-$HOME/.local/state}/pipesplit-output"
 systemctl --user daemon-reload 2>/dev/null || true
+
+log "Restarting PipeWire..."
+systemctl --user restart pipewire
+ok "PipeWire restarted"
 
 echo ""
 ok "Uninstalled!"
-echo ""
-echo "  Kept (remove manually if you want):"
-echo "    ~/.config/pipesplit/routes.conf"
-echo ""
-echo "  Restart PipeWire to remove virtual sinks:"
-echo "    systemctl --user restart pipewire"

@@ -18,19 +18,22 @@ trap 'tput cnorm 2>/dev/null || true' EXIT INT TERM
 multiselect() {
     local -n _ms_result=$1
     local _ms_title=$2
-    shift 2
+    local _ms_default=${3:-1}
+    shift 3
     local _ms_items=("$@")
     local _ms_count=${#_ms_items[@]}
     local _ms_selected=()
     local _ms_cursor=0
     local _ms_key _ms_seq i
 
-    for (( i=0; i<_ms_count; i++ )); do _ms_selected+=(0); done
+    for (( i=0; i<_ms_count; i++ )); do _ms_selected+=("$_ms_default"); done
+    local _ms_hint="all pre-selected"
+    [[ $_ms_default -eq 0 ]] && _ms_hint="none selected"
 
     _ms_redraw() {
         printf "\033[%dF" "$((_ms_count + 2))"
         printf "\033[K\033[1m%s\033[0m\n" "$_ms_title"
-        printf "\033[K  \033[2m↑↓ move   Space toggle   Enter confirm\033[0m\n"
+        printf "\033[K  \033[2m↑↓ move   Space toggle   Enter confirm  (%s)\033[0m\n" "$_ms_hint"
         for (( i=0; i<_ms_count; i++ )); do
             local mark="[ ]"
             [[ ${_ms_selected[$i]} -eq 1 ]] && mark=$'\033[1;32m[x]\033[0m'
@@ -44,8 +47,14 @@ multiselect() {
 
     # Initial render
     printf "\033[1m%s\033[0m\n" "$_ms_title"
-    printf "  \033[2m↑↓ move   Space toggle   Enter confirm\033[0m\n"
-    for (( i=0; i<_ms_count; i++ )); do printf "  [ ]  %s\n" "${_ms_items[$i]}"; done
+    printf "  \033[2m↑↓ move   Space toggle   Enter confirm  (%s)\033[0m\n" "$_ms_hint"
+    for (( i=0; i<_ms_count; i++ )); do
+        if [[ $_ms_default -eq 1 ]]; then
+            printf "  \033[1;32m[x]\033[0m  %s\n" "${_ms_items[$i]}"
+        else
+            printf "  [ ]  %s\n" "${_ms_items[$i]}"
+        fi
+    done
 
     tput civis 2>/dev/null || true
 
@@ -71,6 +80,7 @@ multiselect() {
     for (( i=0; i<_ms_count; i++ )); do
         [[ ${_ms_selected[$i]} -eq 1 ]] && _ms_result+=("${_ms_items[$i]}")
     done
+    return 0
 }
 
 # ── yes/no prompt ─────────────────────────────────────────────────────
@@ -150,7 +160,7 @@ printf '\n'
 
 # ── Step 2: select outputs ────────────────────────────────────────────
 SEL_OUTPUTS=()
-multiselect SEL_OUTPUTS "Select output devices to configure:" "${DETECTED[@]}"
+multiselect SEL_OUTPUTS "Select output devices to configure:" 1 "${DETECTED[@]}"
 
 if [[ ${#SEL_OUTPUTS[@]} -eq 0 ]]; then
     err "No outputs selected. Exiting."
@@ -182,7 +192,7 @@ done
 # ── Step 4: select sink categories ───────────────────────────────────
 ALL_CATS=(music games voice browser)
 SEL_CATS=()
-multiselect SEL_CATS "Select audio sink categories to create:" "${ALL_CATS[@]}"
+multiselect SEL_CATS "Select audio sink categories to create:" 1 "${ALL_CATS[@]}"
 
 if [[ ${#SEL_CATS[@]} -eq 0 ]]; then
     err "No categories selected. Exiting."
@@ -193,9 +203,11 @@ printf '\n'
 # ── Step 5: stream channels ───────────────────────────────────────────
 printf '  Stream channels add a separate virtual sink per category\n'
 printf '  (e.g. stream-music, stream-games) for streaming software.\n\n'
-WANT_STREAM=false
-ask_yn "Add stream channels for selected categories?" && WANT_STREAM=true || true
+SEL_STREAM_CATS=()
+multiselect SEL_STREAM_CATS "Select categories to add stream channels for:" 1 "${SEL_CATS[@]}"
 printf '\n'
+declare -A STREAM_CAT_SET
+for _sc in "${SEL_STREAM_CATS[@]}"; do STREAM_CAT_SET[$_sc]=1; done
 
 # ── Step 6: pre-configured app routes ────────────────────────────────
 declare -A DEFAULT_APPS=([music]="spotify" [games]=".exe" [browser]="chromium" [voice]="discord")
@@ -225,7 +237,7 @@ trap 'rm -f "$GEN_PW" "$GEN_OUT" "$GEN_RT"; tput cnorm 2>/dev/null || true' EXIT
         desc=$(title_case "$cat")
         printf '\n'
         sink_block "${cat}" "${desc}"
-        if [[ "$WANT_STREAM" == true ]]; then
+        if [[ -v STREAM_CAT_SET[$cat] ]]; then
             sink_block "stream-${cat}" "Stream-${desc}"
         fi
     done
@@ -250,7 +262,7 @@ trap 'rm -f "$GEN_PW" "$GEN_OUT" "$GEN_RT"; tput cnorm 2>/dev/null || true' EXIT
     printf 'virtual_sinks ='
     for cat in "${SEL_CATS[@]}"; do
         printf ' %s' "$cat"
-        [[ "$WANT_STREAM" == true ]] && printf ' stream-%s' "$cat"
+        [[ -v STREAM_CAT_SET[$cat] ]] && printf ' stream-%s' "$cat"
     done
     printf '\n'
 } > "$GEN_OUT"
@@ -270,7 +282,7 @@ trap 'rm -f "$GEN_PW" "$GEN_OUT" "$GEN_RT"; tput cnorm 2>/dev/null || true' EXIT
             [[ -v DEFAULT_APPS[$cat] ]] || continue
             app="${DEFAULT_APPS[$cat]}"
             hp="hp-${cat}"
-            if [[ "$WANT_STREAM" == true ]]; then
+            if [[ -v STREAM_CAT_SET[$cat] ]]; then
                 printf '%-16s= %s, stream-%s\n' "$app" "$cat" "$cat"
             else
                 printf '%-16s= %s\n' "$app" "$cat"
@@ -280,7 +292,7 @@ trap 'rm -f "$GEN_PW" "$GEN_OUT" "$GEN_RT"; tput cnorm 2>/dev/null || true' EXIT
     fi
     printf '# Add more apps as needed:\n'
     for cat in "${SEL_CATS[@]}"; do
-        if [[ "$WANT_STREAM" == true ]]; then
+        if [[ -v STREAM_CAT_SET[$cat] ]]; then
             printf '# myapp           = %s, stream-%s\n' "$cat" "$cat"
         else
             printf '# myapp           = %s\n' "$cat"
@@ -325,10 +337,33 @@ ok "~/.local/share/applications/pipesplit.desktop"
 printf '\n'
 ok "Installed!"
 printf '\n'
-printf '  Next steps:\n\n'
-printf '  1. systemctl --user restart pipewire\n'
-printf '  2. systemctl --user enable --now pipesplit\n'
-printf '  3. pipesplit connect\n\n'
+
+log "Restarting PipeWire..."
+systemctl --user restart pipewire
+sleep 2
+ok "PipeWire restarted"
+
+log "Enabling pipesplit service..."
+systemctl --user enable pipesplit
+# First start may fail if PipeWire nodes haven't fully registered yet; the
+# service has Restart=on-failure so it will recover — just wait for it.
+systemctl --user start pipesplit 2>/dev/null || true
+_waited=0
+until systemctl --user is-active pipesplit.service &>/dev/null; do
+    sleep 1
+    _waited=$((_waited + 1))
+    if [[ $_waited -ge 15 ]]; then
+        warn "Service is taking longer than expected — check: systemctl --user status pipesplit.service"
+        break
+    fi
+done
+ok "pipesplit service enabled and started"
+
+log "Connecting audio..."
+PIPESPLIT_NO_RESTART=1 ~/.local/bin/pipesplit connect
+ok "Audio connected"
+
+printf '\n'
 keys_str=$(IFS='|'; printf '%s' "${OUT_KEYS[*]}")
 printf '  Toggle output:  pipesplit toggle   (cycles: %s)\n' "$keys_str"
 printf '  Check status:   pipesplit status\n\n'

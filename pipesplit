@@ -181,17 +181,18 @@ switch_to() {
     # Save state
     mkdir -p "$(dirname "$STATE_FILE")"
     echo "$target" > "$STATE_FILE"
-    notify "Switched to $label"
 
     # Start/restart the auto-router
     if [[ -n "${PIPESPLIT_NO_RESTART:-}" ]]; then
-        : # skip restart when called from service ExecStartPre
+        : # skip restart and notification when called from service ExecStartPre
     elif systemctl --user is-enabled pipesplit.service &>/dev/null; then
         log "Restarting auto-router..."
         systemctl --user restart pipesplit.service
+        notify "Switched to $label"
     else
         log "Running one-time app routing..."
         ~/.local/bin/pipesplit-router --once 2>/dev/null || true
+        notify "Switched to $label"
     fi
 
     echo ""
