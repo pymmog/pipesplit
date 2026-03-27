@@ -93,7 +93,7 @@ get_audio_output_nodes() {
             [[ "$p_pname" == "output_FR" ]] && fr_id="$p_pid"
         done <<< "$port_map"
         if [[ -n "$fl_id" && -n "$fr_id" ]]; then
-            echo "$fl_id $fr_id $node_name"
+            echo "$fl_id $fr_id $node_id $node_name"
         fi
     done <<< "$node_map"
 }
@@ -131,13 +131,23 @@ disconnect_app_from_hardware() {
 }
 
 route_app() {
-    local fl_id="$1" fr_id="$2" hp="$3" stream="$4" name="${5:-}" hw_nodes="${6:-}"
+    local fl_id="$1" fr_id="$2" hp="$3" stream="$4" name="${5:-}" hw_nodes="${6:-}" node_id="${7:-}"
 
-    quiet_link "$fl_id" "${hp}:playback_FL"
-    quiet_link "$fr_id" "${hp}:playback_FR"
+    local new_link=0
+    pw-link "$fl_id" "${hp}:playback_FL" 2>/dev/null && new_link=1 || true
+    pw-link "$fr_id" "${hp}:playback_FR" 2>/dev/null || true
     if [[ -n "$stream" ]]; then
-        quiet_link "$fl_id" "${stream}:playback_FL"
-        quiet_link "$fr_id" "${stream}:playback_FR"
+        pw-link "$fl_id" "${stream}:playback_FL" 2>/dev/null || true
+        pw-link "$fr_id" "${stream}:playback_FR" 2>/dev/null || true
+    fi
+
+    # Tell WirePlumber to remember this virtual sink as the target for the stream.
+    # Only do this when the link is newly created — calling pw-metadata on every
+    # poll pass causes WirePlumber to re-process the stream, briefly spiking its
+    # volume to 100% before restoring the saved level.
+    if [[ $new_link -eq 1 && -n "$node_id" ]]; then
+        pw-metadata "$node_id" target.object '{"name":"'"$hp"'"}' 2>/dev/null || true
+        log "Routed: $name → $hp${stream:+ + $stream}"
     fi
 
     disconnect_app_from_hardware "$fl_id" "$fr_id" "$name" "$hw_nodes"
@@ -148,15 +158,20 @@ do_routing_pass() {
     nodes=$(get_audio_output_nodes)
     hw_nodes=$(get_hw_outputs)
 
+    declare -A matched=()
+
     for i in "${!PATTERNS[@]}"; do
         local pattern="${PATTERNS[$i]}"
         local hp="${HP_SINKS[$i]}"
         local stream="${STREAM_SINKS[$i]}"
 
-        while IFS=' ' read -r fl_id fr_id node_name; do
+        while IFS=' ' read -r fl_id fr_id node_id node_name; do
             [[ -z "$fl_id" ]] && continue
+            # First-match-wins: skip nodes already claimed by an earlier pattern.
+            [[ -n "${matched[$node_id]:-}" ]] && continue
             if echo "$node_name" | grep -qiF "$pattern"; then
-                route_app "$fl_id" "$fr_id" "$hp" "$stream" "$node_name" "$hw_nodes"
+                matched[$node_id]=1
+                route_app "$fl_id" "$fr_id" "$hp" "$stream" "$node_name" "$hw_nodes" "$node_id"
             fi
         done <<< "$nodes"
     done

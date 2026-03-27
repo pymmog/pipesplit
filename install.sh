@@ -312,7 +312,9 @@ mkdir -p ~/.config/pipesplit
 cp "$GEN_OUT" ~/.config/pipesplit/outputs.conf
 ok "~/.config/pipesplit/outputs.conf"
 if [[ -f ~/.config/pipesplit/routes.conf ]]; then
-    info "~/.config/pipesplit/routes.conf (exists, not overwriting)"
+    _bak=~/.config/pipesplit/routes.conf.bak
+    cp ~/.config/pipesplit/routes.conf "$_bak"
+    info "~/.config/pipesplit/routes.conf (backed up to routes.conf.bak, not overwriting)"
 else
     cp "$GEN_RT" ~/.config/pipesplit/routes.conf
     ok "~/.config/pipesplit/routes.conf"
